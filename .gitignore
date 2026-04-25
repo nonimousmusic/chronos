@@ -1,0 +1,51 @@
+node_modules/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.DS_Store
+**/.DS_Store
+
+# Session data and logs
+backend/data/
+**/__pycache__/
+*.pyc
+
+# Distribution
+dist/
+dist-ssr/
+*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vercel
+
+# Large data files — use cloud storage instead
+*.csv
+*.pkl
+*.h5
+*.pt
+*.onnx
+*.pptx
+*.docx
+*.xlsx
+*.xls
+
+# Model artifacts
+chronos_models/
+storeing models/
+model_training_outputs/
+backend/.cache/

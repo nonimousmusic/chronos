@@ -1,0 +1,42 @@
+{
+  "optimized_at": "2026-04-21T15:58:56Z",
+  "dataset_rows": 13399,
+  "n_features_base": 81,
+  "n_features_total": 119,
+  "n_miss_indicators": 38,
+  "dead_cols_removed": [
+    "spo2",
+    "sf_ratio",
+    "sf_ratio_min_12h",
+    "observation_window_hours"
+  ],
+  "best_hyperparams": {
+    "n_estimators": 636,
+    "max_depth": 7,
+    "learning_rate": 0.010213766352463963,
+    "min_child_weight": 9,
+    "gamma": 0.5475813661454916,
+    "subsample": 0.9449225948365791,
+    "colsample_bytree": 0.9028909317362358,
+    "reg_alpha": 0.0018273307563869826,
+    "reg_lambda": 0.025745828722273347,
+    "scale_pos_weight": 1.4168630501160386
+  },
+  "optimal_thresholds": {
+    "2h": 0.08944272262959616,
+    "6h": 0.171828545914965,
+    "12h": 0.2118792393487683
+  },
+  "performance": {
+    "baseline_12h": {
+      "auroc": 0.7164275539275539,
+      "auprc": 0.5005543902469877,
+      "brier": 0.19929028320970543
+    },
+    "optimized_12h": {
+      "auroc": 0.7230921855921857,
+      "auprc": 0.5061389370003753,
+      "brier": 0.1651915777208511
+    }
+  }
+}
