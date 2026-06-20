@@ -4,6 +4,7 @@ Stub returns mock tx hashes. Real mode sends Merkle roots to an EVM contract
 with receipt confirmation, retry queue, and configurable gas.
 """
 
+import os
 import time
 import logging
 from collections import deque
@@ -25,8 +26,8 @@ ABI = [
 _failed_roots: deque[tuple[bytes, int]] = deque(maxlen=100)
 _MAX_RETRIES = 3
 _RETRY_DELAY_S = 30
-_GAS_LIMIT = int(__import__("os").getenv("BLOCKCHAIN_GAS_LIMIT", "200000"))
-_GAS_PRICE_MULTIPLIER = float(__import__("os").getenv("BLOCKCHAIN_GAS_PRICE_MULTIPLIER", "1.1"))
+_GAS_LIMIT = int(os.getenv("BLOCKCHAIN_GAS_LIMIT", "200000"))
+_GAS_PRICE_MULTIPLIER = float(os.getenv("BLOCKCHAIN_GAS_PRICE_MULTIPLIER", "1.1"))
 
 
 def send_root(root_bytes: bytes) -> str:

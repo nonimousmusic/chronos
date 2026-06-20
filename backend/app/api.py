@@ -21,13 +21,12 @@ import os
 import json
 import asyncio
 import time
-import uuid
 import traceback
+import logging
 from enum import Enum
-from typing import cast, Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
-import logging
 
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,8 +61,8 @@ async def jwt_auth_middleware(request: Request, call_next):
 # ── Global Error Handler ──
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    print(f"[ERROR] {request.url.path}: {exc}")
-    print(traceback.format_exc())
+    logger.error(f"{request.url.path}: {exc}")
+    logger.debug(traceback.format_exc())
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
@@ -180,12 +179,12 @@ async def list_recordings():
                             "genesis_hash": manifest.get("genesis_hash", ""),
                         })
                     except Exception as e:
-                        print(f"[RECORDS] Skipping {sid}: {e}")
+                        logger.warning(f"Skipping {sid}: {e}")
                         continue
             if recordings:
                 return recordings
         except Exception as e:
-            print(f"[RECORDS] Supabase list failed: {e}")
+            logger.warning(f"Supabase list failed: {e}")
 
     # 2. Local Fallback
     sessions_dir = os.path.abspath(BASE_DATA_DIR)
@@ -205,7 +204,7 @@ async def list_recordings():
                     "genesis_hash": manifest.get("genesis_hash", ""),
                 })
             except Exception as e:
-                print(f"[RECORDS] Skipping local session {sid}: {e}")
+                logger.warning(f"Skipping local session {sid}: {e}")
                 continue
     return recordings
 
@@ -303,9 +302,9 @@ async def stop_session():
                 "curr_hash": final_hash,
                 "recorded_at": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
             }).execute()
-            print(f"[API] Final anchor stored for session {sid}")
+            logger.info(f"Final anchor stored for session {sid}")
     except Exception as e:
-        print(f"[API] Supabase anchoring failed: {e}")
+        logger.warning(f"Supabase anchoring failed: {e}")
 
     main.stop_pipeline()
     return {"status": "stopped", "session_id": sid, "patient_id": pid}
@@ -326,7 +325,7 @@ async def verify_recording(session_id: str):
                 manifest = json.loads(data)
                 return {"status": "manifest_only", "message": "Verified against cloud manifest (frames not checked)"}
             except Exception as e:
-                print(f"[VERIFY] Cloud manifest fetch failed for {session_id}: {e}")
+                logger.warning(f"Cloud manifest fetch failed for {session_id}: {e}")
         raise HTTPException(status_code=404, detail="Session not found")
 
     manifest = store.load_manifest(manifest_path)
@@ -404,8 +403,8 @@ async def predict_risk(request: Request):
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=f"Model not loaded: {e}")
     except Exception as e:
-        print(f"[PREDICT ERROR] {e}")
-        print(traceback.format_exc())
+        logger.error(f"Prediction failed: {e}")
+        logger.debug(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Prediction failed")
 
 

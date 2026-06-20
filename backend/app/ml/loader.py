@@ -62,15 +62,12 @@ def load_artifacts() -> Dict[str, Any]:
         _artifacts["feature_cols"] = _load_artifact("feature_cols.pkl")
 
         # Optional artifacts — may not exist in all versions
-        # Feature names (try versioned file first, then generic)
+        # Feature names (try generic first, then auto-discover versioned)
         _artifacts["feature_names_fe"] = None
-        for fe_file in ["feature_names_fe.pkl", "feature_names_fe_105.pkl"]:
-            try:
-                _artifacts["feature_names_fe"] = _load_artifact(fe_file)
-                break
-            except FileNotFoundError:
-                continue
-        # Auto-discover versioned feature_names_fe_<N>.pkl files
+        try:
+            _artifacts["feature_names_fe"] = _load_artifact("feature_names_fe.pkl")
+        except FileNotFoundError:
+            pass
         if _artifacts["feature_names_fe"] is None:
             import glob
             pattern = os.path.join(_MODELS_DIR, "feature_names_fe_*.pkl")

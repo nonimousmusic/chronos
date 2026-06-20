@@ -953,9 +953,6 @@ print(f"    [OK] scaler.pkl ({fsize/1024:.1f} KB)")
 fsize = _save_artifact(xgb_models, 'xgb_models.pkl')
 print(f"    [OK] xgb_models.pkl ({fsize/1024:.1f} KB)")
 
-fsize = _save_artifact(xgb_models, 'xgb_models.pkl')
-print(f"    [OK] xgb_models.pkl ({fsize/1024:.1f} KB)")
-
 fsize = _save_artifact(FEATURE_COLS, 'feature_cols.pkl')
 print(f"    [OK] feature_cols.pkl")
 

@@ -49,3 +49,6 @@ chronos_models/
 storeing models/
 model_training_outputs/
 backend/.cache/
+
+# CatBoost stale artifacts (Phase 3 removal)
+**/catboost_info/

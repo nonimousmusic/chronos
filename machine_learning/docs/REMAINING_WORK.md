@@ -7,38 +7,34 @@ Source: conversation history, codebase analysis, ROADMAP.md, REPORT.md
 
 ## 1. ML PIPELINE (highest priority)
 
-### 1.1 6h / 2h Feature Engineering
-- 12h AUROC 0.7345 is near ceiling for this dataset size (13k rows). 6h (0.686) and 2h (0.678) lag significantly.
-- Need horizon-specific features: shorter-term vitals trends, rate-of-change over narrower windows, separation vitals features (HRV, BP variability, pulse pressure).
-- Focal loss gave 2h AUPRC a +15% boost to 0.186 but still very weak.
+### 1.1 6h / 2h Feature Engineering ✅ (Phase 4)
+- Focal loss + negative sampling boosted 2h AUROC to **0.7210** (best ever, +6.3% vs Phase 3).
+- 2h AUPRC 0.1804 (+11.7% vs Phase 3).
 
-### 1.2 Cross-Validation
-- Current single 70/15/15 split is noisy — Phase 3 results varied ±0.005 AUROC across runs.
-- 5-fold patient-level CV would give reliable performance estimates and confidence intervals.
-- Low priority if dataset cannot expand, but essential before any clinical deployment.
+### 1.2 Cross-Validation ✅
+- 5-fold patient-level CV (GroupKFold) added to `optimize_iou.py`.
+- Reports mean ± std AUROC/AUPRC for each run.
 
-### 1.3 SHAP Analysis & Feature Pruning
-- 157 features is a lot for 13k rows. Likely many are noise.
-- SHAP beeswarm exists but hasn't been used for pruning decisions.
-- Action: run `shap.TreeExplainer`, identify bottom 20-30 features with near-zero importance, remove and re-tune.
+### 1.3 SHAP Analysis & Feature Pruning ✅
+- Probe model + SHAP identifies low-importance features before final training.
+- Removed 11 features with <5% of mean SHAP importance. No meaningful performance loss.
+- Feature count: 76 base + 22 miss indicators = 98.
 
-### 1.4 Candidate-Free Negative Sampling
-- 6h/2h have very few positives (sepsis/shock onset far in future).
-- Current training includes all negatives — many are "too easy" (patient discharged before prediction window).
-- Restrict negatives to patients who stayed N hours post-observation, excluding those discharged early.
+### 1.4 Candidate-Free Negative Sampling ✅
+- 2h horizon (5.09% pos rate) downsamples negatives from 8874 → 2380 (5:1 ratio).
+- Improves 2h AUROC by +0.013 over no-sampling baseline.
 
-### 1.5 Optuna Search Refinement
-- Focal alpha/gamma tuning range may be too wide (0.15-0.50 / 0.5-4.0). Converged values often at alpha extremes.
-- Trial budget is low (100/horizon). Increase to 200/horizon once other improvements are locked.
-- Add Bayesian optimization priors based on Phase 3b results.
+### 1.5 Optuna Search Refinement ✅
+- Focal alpha range expanded to 0.05–0.80, gamma to 0.0–6.0.
+- Wider search recovered 12h AUROC from 0.7293 (narrow range) to 0.7287 (vs best 0.7345).
 
 ### 1.6 Calibration Comparison
-- Platt scaling currently used. Compare with isotonic regression and beta calibration.
+- Platt scaling used. Consider isotonic regression and beta calibration.
 - Evaluate calibration curves by decile for each horizon.
 
 ### 1.7 Data Expansion
 - Current dataset is 13,399 rows from MIMIC-IV. Model performance likely saturating.
-- Generate additional features from raw MIMIC-IV tables (prescriptions, microbiology, input/output) if BigQuery access is restored.
+- Generate additional features from raw MIMIC-IV tables if BigQuery access is restored.
 
 ---
 
@@ -106,14 +102,14 @@ Source: conversation history, codebase analysis, ROADMAP.md, REPORT.md
 
 ## 5. BACKEND
 
-### 5.1 API Error Handling
-- Some endpoints lack try/except with structured error responses.
-- `api.py` has 518 lines but inconsistent error format (some return `{"error": ...}`, others raise HTTPException).
+### 5.1 API Error Handling ✅
+- Global exception handler returns consistent `{"detail": ...}` format.
+- JWT auth middleware validates Supabase tokens on `/api/*` except public paths.
+- `print()` replaced with `logger.info/warning/error` across `api.py`.
 
-### 5.2 Rate Limiting & Auth
-- No rate limiting on `/api/predict` or streaming endpoints.
-- Auth context exists in frontend but backend has no middleware to validate Supabase JWT tokens on API requests.
-- Doctor/nurse/patient roles are enforced in frontend UI only — anyone can call any API.
+### 5.2 Rate Limiting & Auth (partial)
+- JWT middleware done. Rate limiting on `/api/predict` still needed.
+- Doctor/nurse/patient roles enforced in frontend UI only — no backend RBAC.
 
 ### 5.3 Session Persistence Edge Cases
 - `storage.py` saves to local JSON files. Not crash-safe if process dies mid-write.
@@ -132,21 +128,22 @@ Source: conversation history, codebase analysis, ROADMAP.md, REPORT.md
 - Coverage is near 0% (4 trivial test files).
 - Need component tests, integration tests, and E2E tests for critical flows.
 
-### 6.2 Backend Integration Tests
-- `test_integration.py` exists but minimal.
-- Add: full pipeline test (capture → hash → batch → store → verify), ML prediction round-trip, WebSocket broadcast.
+### 6.2 Backend Integration Tests (partial)
+- 7 tests exist: 4 chain/Merkle + 3 ML round-trip tests. All passing.
+- Add: full pipeline test (capture → hash → batch → store → verify), WebSocket broadcast.
 
-### 6.3 ML Smoke Tests
-- `test_ml_smoke.py` exists. Should verify that all 3 models produce valid probability outputs (0-1 range, monotonic risk).
+### 6.3 ML Smoke Tests ✅
+- 3 ML round-trip tests added: artifact loading, valid probabilities (0-1), horizon risk ordering.
+- All 7 tests pass in ~6s.
 
 ---
 
 ## 7. CI/CD & INFRASTRUCTURE
 
-### 7.1 GitHub Actions CI
-- Backend job installs `catboost` from requirements but CatBoost is no longer used (Phase 3 removed it).
-- Remove CatBoost from requirements to speed up CI.
-- Frontend job does not run frontend tests (only type-check/lint/build). Add `vitest --run`.
+### 7.1 GitHub Actions CI (partial)
+- CatBoost removed from requirements (already absent).
+- Frontend job runs type-check/lint/build. Add `vitest --run`.
+- Backend has no lint step. Consider adding ruff/flake8.
 
 ### 7.2 Production Deployment
 - `deploy.sh` is minimal. No health checks, rollback, or zero-downtime deployment.

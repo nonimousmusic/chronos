@@ -7,7 +7,10 @@ runs XGBoost inference, and computes SHAP feature contributions.
 """
 
 import logging
+import warnings
 import numpy as np
+import pandas as pd
+import xgboost as xgb
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -56,13 +59,9 @@ def predict(features: Dict[str, Any]) -> Dict[str, Any]:
         else:
             feature_vector.append(float(val))
 
-    import pandas as pd
-
-    # ── Preprocessing: Build DataFrame to match imputer requirements ──
     df_raw = pd.DataFrame([feature_vector], columns=feature_cols)
 
     try:
-        import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             X_imputed = imputer.transform(df_raw)
@@ -139,9 +138,8 @@ def _run_inference(models: Any, X_scaled: np.ndarray, feature_cols: List[str]) -
     Run the XGBoost model(s) and return a risk probability.
 
     Handles multiple model formats:
-    - Single XGBClassifier: calls predict_proba
     - Dict of models (e.g., {"2h": model, "6h": model, "12h": model}): averages
-    - List of models: averages
+    - Single model: direct prediction
     """
     try:
         if isinstance(models, dict):
@@ -151,11 +149,6 @@ def _run_inference(models: Any, X_scaled: np.ndarray, feature_cols: List[str]) -
                 prob = _predict_single(model, X_scaled, feature_cols)
                 probs.append(prob)
                 logger.debug(f"Model '{name}' prediction: {prob:.4f}")
-            return float(np.mean(probs))
-
-        elif isinstance(models, list):
-            # Ensemble list — average
-            probs = [_predict_single(m, X_scaled, feature_cols) for m in models]
             return float(np.mean(probs))
 
         else:
@@ -170,8 +163,6 @@ def _run_inference(models: Any, X_scaled: np.ndarray, feature_cols: List[str]) -
 
 def _predict_single(model: Any, X: np.ndarray, feature_cols: List[str]) -> float:
     """Get probability from a single model."""
-    import xgboost as xgb
-
     if hasattr(model, "predict_proba"):
         # sklearn API
         proba = model.predict_proba(X)
