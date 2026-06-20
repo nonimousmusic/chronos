@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import CommandPalette from './components/CommandPalette'
 import DoctorQuickAuth from './components/auth/DoctorQuickAuth'
@@ -476,16 +476,14 @@ function AuthenticatedApp() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <ThemeProvider>
-        <AuthProvider>
-          <ToastProvider>
-            <ErrorBoundary>
-              <AuthenticatedApp />
-            </ErrorBoundary>
-          </ToastProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <ErrorBoundary>
+            <AuthenticatedApp />
+          </ErrorBoundary>
+        </ToastProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }

@@ -12,10 +12,19 @@ Run these SQL files **in order** in the Supabase SQL Editor (**Database → SQL 
 | 4 | `04_realtime.sql` | Enables Realtime on 5 tables for live push updates |
 | 5 | `05_rls_policies.sql` | Configures Row Level Security (read/write access) |
 | 6 | `06_storage.sql` | Creates the `sessions` storage bucket + access policies |
+| 7 | `07_notification_trigger.sql` | Auto-creates notification when risk score ≥ 70% |
+| 8 | `08_auth_trigger.sql` | Auto-creates `public.users` row on signup |
 
 ## Manual Steps (Dashboard)
 
 After running the SQL files, do these in the Supabase dashboard:
+
+### Optional: Generate TypeScript types
+If the [Supabase CLI](https://supabase.com/docs/guides/cli) is installed and linked:
+```bash
+supabase gen types typescript --linked > frontend/src/types/supabase.ts
+```
+This adds type safety to all `supabase.from('table_name')` calls across the frontend.
 
 1. **Authentication → Settings** → Disable **"Confirm email"** (for dev/demo)
 2. **Authentication → Providers** → Ensure **Email** is enabled
@@ -31,7 +40,7 @@ VITE_SUPABASE_ANON_KEY=your_anon_key_here
 ### Backend (`backend/.env`)
 ```
 SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
-SUPABASE_SERVICE_KEY=your_service_role_key_here
+SUPABASE_KEY=your_supabase_anon_key_here
 ```
 
 > ⚠️ Never commit `.env` files to Git.

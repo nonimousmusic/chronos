@@ -171,6 +171,14 @@ Section 13:    Save artifacts
 - Global exception handler — single handler returning `{"detail": ...}` in all environments
 - Graceful degradation when Supabase is unconfigured (allows unauthenticated access)
 
+## Supabase
+- Backend client: `backend/app/supabase_client.py` — reads `SUPABASE_URL` + `SUPABASE_KEY`, falls back to `VITE_*` vars
+- Frontend client: `frontend/src/supabaseClient.ts` — reads `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`
+- SQL migrations in `supabase/` — run in order (01→08) in Supabase SQL Editor
+- `07_notification_trigger.sql`: Auto-creates notification row when `risk_predictions.risk_percentage >= 70` (80+ = ringing, 70-79 = silent)
+- `08_auth_trigger.sql`: Auto-creates `public.users` row when user signs up via Supabase Auth (pulls name/role from `raw_user_meta_data`)
+- Backend uses anon key (sufficient with permissive RLS); README docs corrected for key name
+
 ## Key Constraints
 - Training and inference feature code **MUST be identical** — any feature created in `optimize_iou.py` must exist in `predictor.py`'s `_apply_feature_engineering`
 - Inference uses `_apply_feature_engineering(features, target_encode_maps=artifacts.get("target_encode_maps"))`
