@@ -38,20 +38,36 @@ from .config import BASE_DATA_DIR, IS_VERCEL
 
 app = FastAPI(title="Surgical Black Box API", version="2.0.0")
 
-# ── Global Error Handler for Vercel Tracebacks ──
-if IS_VERCEL:
-    @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception):
-        # Log full traceback server-side, but never expose to client
-        print(f"[ERROR] {request.url.path}: {exc}")
-        print(traceback.format_exc())
-        return JSONResponse(
-            status_code=500,
-            content={
-                "message": "Internal server error",
-                "path": request.url.path
-            }
-        )
+# ── JWT Auth Middleware ──────────────────────────────────────────────────────
+PUBLIC_PATHS = {"/api/health", "/api/snapshot", "/api/stream", "/ws/live"}
+
+@app.middleware("http")
+async def jwt_auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/") and path not in PUBLIC_PATHS:
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        token = auth[len("Bearer "):]
+        try:
+            from .supabase_client import supabase as sb_client
+            if sb_client is not None:
+                sb_client.auth.get_user(token)
+            # If sb_client is None (no Supabase configured), allow through
+        except Exception:
+            return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
+    response = await call_next(request)
+    return response
+
+# ── Global Error Handler ──
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    print(f"[ERROR] {request.url.path}: {exc}")
+    print(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 # ── Deployment: Serve Frontend Static Files ──
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

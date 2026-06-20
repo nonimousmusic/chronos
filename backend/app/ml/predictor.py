@@ -42,9 +42,10 @@ def predict(features: Dict[str, Any]) -> Dict[str, Any]:
     imputer = artifacts["imputer"]
     feature_cols = get_feature_columns()
     calibrators = artifacts.get("calibrators")
+    target_encode_maps = artifacts.get("target_encode_maps")
 
     # ── Feature Engineering (match training pipeline) ──
-    features = _apply_feature_engineering(features)
+    features = _apply_feature_engineering(features, target_encode_maps=target_encode_maps)
 
     # ── Build feature vector in correct column order ──
     feature_vector = []
@@ -384,17 +385,17 @@ def _fallback_risk_estimate(X: np.ndarray, feature_cols: List[str]) -> float:
         return 0.15  # safe default
 
 
-def _apply_feature_engineering(features: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_feature_engineering(features: Dict[str, Any],
+                               target_encode_maps: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Apply the same feature engineering transforms used during training.
-    Adds rate-of-change, interaction, and ratio features.
+    Adds rate-of-change, interaction, ratio, polynomial, delta-history, and target-encoded features.
     
-    Note: Rate-of-change features require previous values which may not
+    Note: Rate-of-change and delta-history features require previous values which may not
     be available for single-row prediction — they default to 0.0.
     """
     features = dict(features)  # copy to avoid mutation
 
-    # Interaction features
     def _safe_mul(a, b):
         a = features.get(a, 0) or 0
         b = features.get(b, 0) or 0
@@ -403,6 +404,18 @@ def _apply_feature_engineering(features: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             return 0.0
 
+    def _safe_val(key):
+        v = features.get(key)
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return 0.0
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    # ── Phase 1 features ──
+
+    # Interaction features
     features.setdefault('shock_x_vaso', _safe_mul('shock_index', 'vasopressor_active'))
     features.setdefault('lactate_x_sofa', _safe_mul('lactate', 'sofa_approx'))
     features.setdefault('map_x_ne', _safe_mul('map_mean', 'ne_equivalent_dose'))
@@ -410,15 +423,15 @@ def _apply_feature_engineering(features: Dict[str, Any]) -> Dict[str, Any]:
 
     # Ratio features
     try:
-        hr = float(features.get('hr', 0) or 0)
-        rr = float(features.get('rr', 0) or 0)
+        hr = _safe_val('hr')
+        rr = _safe_val('rr')
         features.setdefault('hr_rr_ratio', hr / rr if rr > 0 else np.nan)
     except (TypeError, ValueError):
         features.setdefault('hr_rr_ratio', np.nan)
 
     try:
-        urine = float(features.get('urine_ml', 0) or 0)
-        creat = float(features.get('creatinine', 0) or 0)
+        urine = _safe_val('urine_ml')
+        creat = _safe_val('creatinine')
         features.setdefault('urine_creat_ratio', urine / creat if creat > 0 else np.nan)
     except (TypeError, ValueError):
         features.setdefault('urine_creat_ratio', np.nan)
@@ -426,5 +439,116 @@ def _apply_feature_engineering(features: Dict[str, Any]) -> Dict[str, Any]:
     # Rate-of-change features default to 0 (no temporal context in single prediction)
     for feat in ['hr', 'map_mean', 'lactate', 'creatinine', 'sofa_approx']:
         features.setdefault(f'delta_{feat}_1h', 0.0)
+
+    # ── Phase 2 features ──
+
+    # Phase 2a: Additional clinical interaction features
+    PHASE2_INTERACTIONS = [
+        ('age', 'charlson_comorbidity_index', 'age_x_charlson'),
+        ('lactate', 'creatinine', 'lactate_x_creatinine'),
+        ('hr', 'temp_c', 'hr_x_temp'),
+        ('map_mean', 'lactate', 'map_x_lactate'),
+        ('bilirubin_total', 'creatinine', 'bili_x_creatinine'),
+        ('gcs_total', 'age', 'gcs_x_age'),
+        ('pf_ratio', 'vent_active', 'pf_x_vent'),
+        ('shock_index', 'lactate', 'shock_x_lactate'),
+    ]
+    for f1, f2, name in PHASE2_INTERACTIONS:
+        features.setdefault(name, _safe_mul(f1, f2))
+
+    # Phase 2b: Polynomial (squared) features
+    SQUARE_FEATURES = ['lactate', 'creatinine', 'hr', 'age', 'sofa_approx']
+    for feat in SQUARE_FEATURES:
+        v = _safe_val(feat)
+        features.setdefault(f'{feat}_squared', v * v)
+
+    # Phase 2c: Delta-from-history features (default 0 if no historical context)
+    DELTA_HISTORY = [
+        ('lactate', 'lactate_max_12h', 'lactate_delta_from_max_12h'),
+        ('creatinine', 'creatinine_max_12h', 'creatinine_delta_from_max_12h'),
+        ('hr', 'hr_mean_12h', 'hr_delta_from_mean_12h'),
+        ('map_mean', 'map_mean_12h', 'map_delta_from_mean_12h'),
+        ('shock_index', 'shock_index_max_12h', 'shock_index_delta_from_max_12h'),
+    ]
+    for current_col, hist_col, name in DELTA_HISTORY:
+        curr = _safe_val(current_col)
+        hist = _safe_val(hist_col)
+        features.setdefault(name, curr - hist)
+
+    # Phase 2d: Target encoding for categorical features
+    if target_encode_maps:
+        TARGET_ENCODE_COLS = ['race', 'gender', 'first_careunit', 'admission_type']
+        for cat_col in TARGET_ENCODE_COLS:
+            enc_map = target_encode_maps.get(cat_col, {})
+            raw_val = features.get(cat_col)
+            encoded_col = f'{cat_col}_target_enc'
+            if raw_val is not None and raw_val in enc_map:
+                features.setdefault(encoded_col, float(enc_map[raw_val]))
+            else:
+                features.setdefault(encoded_col, 0.0)
+
+    # ── Phase 3 features ──
+
+    # Helper: safely count abnormal labs
+    def _safe_abnormal(*checks):
+        count = 0
+        for key, threshold, direction in checks:
+            v = _safe_val(key)
+            if direction == 'gt' and v > threshold:
+                count += 1
+            elif direction == 'lt' and 0 < v < threshold:
+                count += 1
+        return count
+
+    # Phase 3a: Organ failure count
+    SOFA_SUBSCORES = ['sofa_resp', 'sofa_coag', 'sofa_liver', 'sofa_renal', 'sofa_cardio', 'sofa_cns']
+    failure_count = 0
+    for sub in SOFA_SUBSCORES:
+        if _safe_val(sub) > 0:
+            failure_count += 1
+    features.setdefault('organ_failure_count', float(failure_count))
+
+    # Phase 3b: Paired organ failure
+    features.setdefault('paired_cardioresp_failure', _safe_mul('sofa_resp', 'sofa_cardio'))
+    features.setdefault('paired_hepatorenal_failure', _safe_mul('sofa_liver', 'sofa_renal'))
+
+    # Phase 3c: Lab derangement score
+    LAB_THRESHOLDS = [
+        ('lactate', 2.0, 'gt'), ('creatinine', 1.2, 'gt'),
+        ('platelets', 150, 'lt'), ('bilirubin_total', 1.2, 'gt'),
+        ('wbc', 12.0, 'gt'), ('wbc', 4.0, 'lt'),
+        ('sodium', 135, 'lt'), ('sodium', 145, 'gt'),
+        ('potassium', 3.5, 'lt'), ('potassium', 5.5, 'gt'),
+        ('hemoglobin', 10, 'lt'), ('glucose', 180, 'gt'),
+    ]
+    features.setdefault('lab_derangement_score', float(_safe_abnormal(*LAB_THRESHOLDS)))
+
+    # Phase 3d: Variability metrics
+    hr_std = _safe_val('hr_std_12h')
+    hr_mean = _safe_val('hr_mean_12h')
+    features.setdefault('hr_cv', hr_std / hr_mean if hr_mean > 0 else 0.0)
+
+    map_mean = _safe_val('map_mean')
+    map_min = _safe_val('map_min_12h')
+    features.setdefault('map_drop_ratio', (map_mean - map_min) / map_mean if map_mean > 0 else 0.0)
+
+    shock_idx = _safe_val('shock_index')
+    shock_max = _safe_val('shock_index_max_12h')
+    features.setdefault('shock_progression_index', shock_idx / shock_max if shock_max > 0 else 0.0)
+
+    # Phase 3e: Trajectory features
+    lactate = _safe_val('lactate')
+    lactate_max = _safe_val('lactate_max_12h')
+    features.setdefault('lactate_clearance_ratio', (lactate_max - lactate) / lactate_max if lactate_max > 0 else 0.0)
+
+    features.setdefault('platelets_delta_from_min_12h', _safe_val('platelets') - _safe_val('platelets_min_12h'))
+
+    pf = _safe_val('pf_ratio')
+    pf_min = _safe_val('pf_ratio_min_12h')
+    features.setdefault('pf_ratio_change', pf - pf_min)
+
+    # Phase 3f: Composite severity scores
+    features.setdefault('oasis_x_sofa', _safe_mul('oasis', 'sofa_approx'))
+    features.setdefault('sapsii_x_lactate', _safe_mul('sapsii', 'lactate'))
 
     return features

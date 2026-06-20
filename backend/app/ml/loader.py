@@ -46,6 +46,7 @@ def load_artifacts() -> Dict[str, Any]:
         - high_miss_cols: columns with high missingness (to exclude/handle)
         - calibrators: (optional) Platt scaling calibrators per horizon
         - optimal_thresholds: (optional) per-horizon alarm thresholds
+        - target_encode_maps: (optional) target encoding maps for categorical features
     """
     global _artifacts, _loaded
 
@@ -97,6 +98,13 @@ def load_artifacts() -> Dict[str, Any]:
             logger.info(f"Loaded optimal thresholds: {_artifacts['optimal_thresholds']}")
         except FileNotFoundError:
             _artifacts["optimal_thresholds"] = None
+
+        # ── Phase 2: Target encoding maps ──
+        try:
+            _artifacts["target_encode_maps"] = _load_artifact("target_encode_maps.pkl")
+            logger.info("Loaded target encoding maps")
+        except FileNotFoundError:
+            _artifacts["target_encode_maps"] = None
 
         _loaded = True
         _log_artifact_info()
