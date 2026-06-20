@@ -17,4 +17,16 @@ export default defineConfig({
     port: 5173,
     open: true,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'three-vendor': ['three', '@react-three/fiber', '@react-three/drei'],
+          'ui-vendor': ['lucide-react', 'framer-motion', 'recharts'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+  },
 })

@@ -1,11 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import ChronosView from './pages/ChronosView'
-import SentinelView from './pages/SentinelView'
-import ICUCommandCenter from './pages/ICUCommandCenter'
-import PatientPortal from './pages/PatientPortal'
-import NurseDashboard from './pages/NurseDashboard'
 import CommandPalette from './components/CommandPalette'
 import DoctorQuickAuth from './components/auth/DoctorQuickAuth'
 import StatusBar from './components/shared/StatusBar'
@@ -20,6 +15,33 @@ import { ErrorBoundary } from './components/shared/ErrorBoundary'
 import { playNavClick, playPaletteOpen } from './utils/sounds'
 import { LogOut, Search, Monitor, Shield, LayoutDashboard } from 'lucide-react'
 import './styles/index.css'
+
+const ChronosView = lazy(() => import('./pages/ChronosView'))
+const SentinelView = lazy(() => import('./pages/SentinelView'))
+const ICUCommandCenter = lazy(() => import('./pages/ICUCommandCenter'))
+const PatientPortal = lazy(() => import('./pages/PatientPortal'))
+const NurseDashboard = lazy(() => import('./pages/NurseDashboard'))
+
+function PageLoader() {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100%',
+      width: '100%',
+    }}>
+      <div style={{
+        width: '32px',
+        height: '32px',
+        borderRadius: '50%',
+        border: '2px solid rgba(52, 211, 153, 0.2)',
+        borderTopColor: '#34d399',
+        animation: 'spin 1s linear infinite',
+      }} />
+    </div>
+  )
+}
 
 // Page transition variants
 const pageVariants = {
@@ -388,50 +410,51 @@ function AuthenticatedApp() {
         transition: 'padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
       }}>
         <AnimatePresence mode="wait">
-          <Routes location={location} key={location.pathname}>
-            <Route path="/" element={
-              <motion.div
-                key="chronos"
-                variants={pageVariants}
-                initial="initial"
-                animate="enter"
-                exit="exit"
-                transition={pageTransition}
-                style={{ height: '100%' }}
-              >
-                <ChronosView onRiskChange={setCurrentRisk} />
-              </motion.div>
-            } />
-            <Route path="/chronos" element={<Navigate to="/" replace />} />
-            <Route path="/command" element={
-              <motion.div
-                key="command"
-                variants={pageVariants}
-                initial="initial"
-                animate="enter"
-                exit="exit"
-                transition={pageTransition}
-                style={{ height: '100%' }}
-              >
-                <ICUCommandCenter onNavigate={navigate} />
-              </motion.div>
-            } />
-            <Route path="/sentinel" element={
-              <motion.div
-                key="sentinel"
-                variants={pageVariants}
-                initial="initial"
-                animate="enter"
-                exit="exit"
-                transition={pageTransition}
-                style={{ height: '100%' }}
-              >
-                <SentinelView />
-              </motion.div>
-            } />
-            {/* Catch-all redirect */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <Suspense fallback={<PageLoader />}>
+            <Routes location={location} key={location.pathname}>
+              <Route path="/" element={
+                <motion.div
+                  key="chronos"
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="enter"
+                  exit="exit"
+                  transition={pageTransition}
+                  style={{ height: '100%' }}
+                >
+                  <ChronosView onRiskChange={setCurrentRisk} />
+                </motion.div>
+              } />
+              <Route path="/chronos" element={<Navigate to="/" replace />} />
+              <Route path="/command" element={
+                <motion.div
+                  key="command"
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="enter"
+                  exit="exit"
+                  transition={pageTransition}
+                  style={{ height: '100%' }}
+                >
+                  <ICUCommandCenter onNavigate={navigate} />
+                </motion.div>
+              } />
+              <Route path="/sentinel" element={
+                <motion.div
+                  key="sentinel"
+                  variants={pageVariants}
+                  initial="initial"
+                  animate="enter"
+                  exit="exit"
+                  transition={pageTransition}
+                  style={{ height: '100%' }}
+                >
+                  <SentinelView />
+                </motion.div>
+              } />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
         </AnimatePresence>
       </div>
 

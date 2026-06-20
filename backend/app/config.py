@@ -26,10 +26,12 @@ CONTRACT_ADDRESS = os.getenv("CONTRACT_ADDRESS", "")
 BLOCKCHAIN_ENABLED = os.getenv("BLOCKCHAIN_ENABLED", "false").lower() == "true"
 
 # Vitals source
-VITALS_FILE = os.getenv(
-    "VITALS_FILE",
-    os.path.join(os.path.dirname(__file__), "../../frontend/src/data/extracted_vitals.json"),
-)
+_VITALS_DEFAULT = os.path.join(os.path.dirname(__file__), "../../frontend/src/data/extracted_vitals.json")
+# Fallback to data/ subdirectory if frontend path doesn't exist
+if not os.path.exists(_VITALS_DEFAULT):
+    _VITALS_DEFAULT = os.path.join(os.path.dirname(__file__), "../data/extracted_vitals.json")
+
+VITALS_FILE = os.getenv("VITALS_FILE", _VITALS_DEFAULT)
 
 # Genesis hash (64 hex zeros)
 CHAIN_GENESIS_HEX = os.getenv(

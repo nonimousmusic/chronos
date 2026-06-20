@@ -61,14 +61,14 @@ FRONTEND_DIST = os.path.join(ROOT_DIR, "frontend", "dist")
 if os.path.exists(FRONTEND_DIST) and not IS_VERCEL:
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="static")
 
-# CORS
+# CORS (configurable via CORS_ORIGINS env var, comma-separated)
+_DEFAULT_ORIGINS = "https://synapse-gtb.vercel.app,http://localhost:5173,http://localhost:3000"
+_cors_origins_str = os.getenv("CORS_ORIGINS", _DEFAULT_ORIGINS)
+_cors_origins = [o.strip() for o in _cors_origins_str.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://synapse-gtb.vercel.app",
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -414,12 +414,15 @@ async def ml_status():
         return {"loaded": False, "error": str(e)}
 
 
-@app.get("/api/verify/{session_id}")
+@app.get("/api/chain-verify/{session_id}")
 async def verify_audit_chain(session_id: str):
-    """Verify the integrity of a session's blockchain-anchored telemetry."""
+    """Verify the integrity of a session's chain of hashes (manifest-level).
+
+    Re-computes the hash chain from the manifest's own data without re-reading
+    frame/vitals files from disk. Faster than POST /api/verify/{session_id}.
+    """
     from .chain import verify_session
     from .config import BASE_DATA_DIR, CHAIN_GENESIS
-    import os
     
     session_dir = os.path.join(BASE_DATA_DIR, session_id)
     if not os.path.exists(session_dir):
@@ -427,3 +430,89 @@ async def verify_audit_chain(session_id: str):
         
     result = verify_session(session_id, session_dir, CHAIN_GENESIS.hex())
     return result
+
+
+@app.get("/api/blockchain-verify/{session_id}")
+async def verify_blockchain_anchoring(session_id: str):
+    """Verify that all Merkle batches from a session are anchored on-chain.
+
+    Checks each batch's tx_hash and root against the EVM chain.
+    """
+    from .blockchain import verify_root_on_chain
+    store = get_storage_module()
+    
+    session_dir = os.path.join(os.path.abspath(BASE_DATA_DIR), session_id)
+    manifest_path = os.path.join(session_dir, "manifest.json")
+
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    manifest = store.load_manifest(manifest_path)
+    batches = manifest.get("merkle_batches", [])
+
+    if not batches:
+        return {"verified": False, "reason": "No Merkle batches found in session"}
+
+    results = []
+    all_verified = True
+    for batch in batches:
+        chain_result = verify_root_on_chain(batch["root"], batch["tx_hash"])
+        results.append({
+            "batch": f"{batch.get('start_seq', '?')}-{batch.get('end_seq', '?')}",
+            "root": batch["root"],
+            "tx_hash": batch["tx_hash"],
+            **chain_result,
+        })
+        if not chain_result.get("verified", False):
+            all_verified = False
+
+    return {
+        "session_id": session_id,
+        "all_verified": all_verified,
+        "batches_checked": len(batches),
+        "results": results,
+    }
+
+
+@app.get("/api/merkle-proof/{session_id}/{seq}")
+async def get_merkle_proof(session_id: str, seq: int):
+    """Get the Merkle proof for a specific record in a session.
+
+    Returns the Merkle proof, batch root, and tx_hash so an external
+    auditor can independently verify the record against the blockchain.
+    """
+    store = get_storage_module()
+    
+    session_dir = os.path.join(os.path.abspath(BASE_DATA_DIR), session_id)
+    manifest_path = os.path.join(session_dir, "manifest.json")
+
+    if not os.path.exists(manifest_path):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    manifest = store.load_manifest(manifest_path)
+    batches = manifest.get("merkle_batches", [])
+
+    for batch in batches:
+        proofs = batch.get("proofs", {})
+        if str(seq) in proofs:
+            return {
+                "session_id": session_id,
+                "seq": seq,
+                "proof": proofs[str(seq)],
+                "root": batch["root"],
+                "tx_hash": batch["tx_hash"],
+                "start_seq": batch.get("start_seq"),
+                "end_seq": batch.get("end_seq"),
+            }
+
+    # Check if record exists but no proof is available
+    records = manifest.get("records", [])
+    if any(r["seq"] == seq for r in records):
+        return {
+            "session_id": session_id,
+            "seq": seq,
+            "proof": None,
+            "reason": "Record found but no Merkle proof available (batch may not have been completed)",
+        }
+
+    raise HTTPException(status_code=404, detail="Record not found in session")
